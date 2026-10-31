@@ -6,33 +6,23 @@ from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import json
-import os
 from src.config import settings
 
-# Регистрация шрифтов для macOS с поддержкой кириллицы
-DEFAULT_FONT = 'Helvetica'
-BOLD_FONT = 'Helvetica-Bold'
+# Шрифт с кириллицей лежит в репозитории, чтобы PDF читался на любой ОС, а не только на macOS
+FONTS_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
+pdfmetrics.registerFont(TTFont('DejaVuSans', FONTS_DIR / "DejaVuSans.ttf"))
+pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', FONTS_DIR / "DejaVuSans-Bold.ttf"))
+DEFAULT_FONT = 'DejaVuSans'
+BOLD_FONT = 'DejaVuSans-Bold'
 
-# Список системных шрифтов macOS с поддержкой кириллицы
-MACOS_FONTS = [
-    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-    "/System/Library/Fonts/Helvetica.ttc",
-    "/System/Library/Fonts/Times.ttc"
-]
-
-# Попытка зарегистрировать Arial Unicode (поддерживает кириллицу)
-for font_path in MACOS_FONTS:
-    if os.path.exists(font_path):
-        try:
-            if "Arial Unicode" in font_path:
-                pdfmetrics.registerFont(TTFont('ArialUnicode', font_path))
-                DEFAULT_FONT = 'ArialUnicode'
-                BOLD_FONT = 'ArialUnicode'
-                break
-        except Exception as e:
-            continue
+def _created_at(data: dict) -> datetime:
+    """Время создания из БД в местном времени (SQLite хранит UTC без часового пояса)"""
+    created_at = data.get('created_at') or datetime.now(timezone.utc)
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    return created_at.astimezone()
 
 def _as_list(value) -> list:
     """Список из готового list или из JSON-строки (как хранится в БД)"""
@@ -137,8 +127,6 @@ def generate_problem_statement(report_data: dict) -> str:
     elements.append(Paragraph("Данные заявителя:", section_header_style))
     elements.append(Paragraph(f"ФИО: {report_data.get('user_full_name', 'Не указано')}", normal_style))
     elements.append(Paragraph(f"Telegram: @{report_data.get('username', report_data.get('telegram_id', 'N/A'))}", normal_style))
-    if report_data.get('phone'):
-        elements.append(Paragraph(f"Телефон: {report_data['phone']}", normal_style))
     elements.append(Spacer(1, 12))
     
     # Информация о проблеме
@@ -155,17 +143,13 @@ def generate_problem_statement(report_data: dict) -> str:
     
     if report_data.get('description'):
         elements.append(Paragraph("Описание проблемы:", section_header_style))
-        # Разбиваем длинный текст на абзацы для лучшего отображения
-        description = report_data['description']
-        if len(description) > 200:
-            description = description[:200] + "..."
-        elements.append(Paragraph(description, normal_style))
+        elements.append(Paragraph(report_data['description'], normal_style))
     
     elements.append(Spacer(1, 15))
     
     # Статус и дата
     elements.append(Paragraph(f"Статус обращения: Новое", normal_style))
-    elements.append(Paragraph(f"Дата подачи: {datetime.now().strftime('%d.%m.%Y %H:%M')}", normal_style))
+    elements.append(Paragraph(f"Дата подачи: {_created_at(report_data).strftime('%d.%m.%Y %H:%M')}", normal_style))
     elements.append(Spacer(1, 20))
     
     # Подпись
@@ -192,7 +176,7 @@ def generate_problem_statement(report_data: dict) -> str:
             f.write("ЗАЯВЛЕНИЕ О ПРОБЛЕМЕ НА ДОРОГЕ\n")
             f.write("=" * 50 + "\n")
             f.write(f"Номер: RD-{report_data['id']}\n")
-            f.write(f"Дата: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n")
+            f.write(f"Дата: {_created_at(report_data).strftime('%d.%m.%Y %H:%M')}\n")
             f.write(f"Тип проблемы: {report_data['problem_type']}\n")
             if report_data.get('address'):
                 f.write(f"Адрес: {report_data['address']}\n")
@@ -293,7 +277,7 @@ def generate_accident_protocol(accident_data: dict) -> str:
     location_info = []
     if accident_data.get('latitude') and accident_data.get('longitude'):
         location_info.append(f"Координаты: {accident_data['latitude']:.6f}, {accident_data['longitude']:.6f}")
-    location_info.append(f"Дата и время: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
+    location_info.append(f"Дата и время: {_created_at(accident_data).strftime('%d.%m.%Y %H:%M')}")
     
     for line in location_info:
         elements.append(Paragraph(line, normal_style))
@@ -321,8 +305,6 @@ def generate_accident_protocol(accident_data: dict) -> str:
     # Обстоятельства ДТП
     elements.append(Paragraph("Обстоятельства ДТП:", section_header_style))
     description = accident_data.get('description', 'Не указано')
-    if len(description) > 300:
-        description = description[:300] + "..."
     elements.append(Paragraph(description, normal_style))
     elements.append(Spacer(1, 12))
     
@@ -333,7 +315,7 @@ def generate_accident_protocol(accident_data: dict) -> str:
     elements.append(Spacer(1, 15))
     
     # Дата составления
-    elements.append(Paragraph(f"Дата составления извещения: {datetime.now().strftime('%d.%m.%Y')}", normal_style))
+    elements.append(Paragraph(f"Дата составления извещения: {_created_at(accident_data).strftime('%d.%m.%Y')}", normal_style))
     elements.append(Spacer(1, 20))
     
     # Подписи
@@ -378,7 +360,7 @@ def generate_accident_protocol(accident_data: dict) -> str:
             f.write("ЕВРОПРОТОКОЛ ДТП\n")
             f.write("=" * 50 + "\n")
             f.write(f"Номер ДТП: ACC-{accident_data['id']}\n")
-            f.write(f"Дата: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n")
+            f.write(f"Дата: {_created_at(accident_data).strftime('%d.%m.%Y %H:%M')}\n")
             f.write(f"Участников: {len(participants)}\n")
             f.write(f"Обстоятельства: {accident_data.get('description', 'Не указано')}\n")
             f.write("\nСформировано системой RoadDoc")

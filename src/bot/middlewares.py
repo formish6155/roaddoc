@@ -2,6 +2,7 @@
 from aiogram.types import Message, TelegramObject
 from aiogram.dispatcher.middlewares.base import BaseMiddleware
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from ..database import User, get_db
 
 class FirstContactMiddleware(BaseMiddleware):
@@ -29,7 +30,11 @@ class FirstContactMiddleware(BaseMiddleware):
                         full_name=full_name
                     )
                     session.add(new_user)
-                    await session.commit()
+                    try:
+                        await session.commit()
+                    except IntegrityError:
+                        # Параллельное сообщение того же пользователя уже создало запись
+                        await session.rollback()
                 elif (user.username, user.full_name) != (username, full_name):
                     # Админы создаются при старте с заглушками вместо имени; заменяем на реальные данные
                     user.username = username

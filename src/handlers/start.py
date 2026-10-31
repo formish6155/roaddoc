@@ -2,41 +2,26 @@ from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
-from sqlalchemy import select
-from src.database import User, get_db
+from pathlib import Path
 from src.keyboards.main_menu import main_menu
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 router = Router()
 
+async def discard_form(state: FSMContext):
+    """Сбросить незаконченную форму и удалить скачанные для неё фото — в БД они не попадут"""
+    data = await state.get_data()
+    for path in data.get('photo_paths', []) + [data.get('photo_path')]:
+        if path:
+            Path(path).unlink(missing_ok=True)
+    await state.clear()
+
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
-    """Обработчик команды /start"""
-    await state.clear()
-    
-    # Сохраняем/обновляем пользователя в БД
-    async with get_db() as session:
-        result = await session.execute(
-            select(User).where(User.telegram_id == message.from_user.id)
-        )
-        user = result.scalar_one_or_none()
-        
-        if not user:
-            user = User(
-                telegram_id=message.from_user.id,
-                username=message.from_user.username,
-                full_name=f"{message.from_user.first_name} {message.from_user.last_name or ''}".strip()
-            )
-            session.add(user)
-            await session.commit()
-            logger.info(f"Новый пользователь зарегистрирован: {message.from_user.id}")
-        else:
-            # Обновляем данные пользователя
-            user.username = message.from_user.username
-            user.full_name = f"{message.from_user.first_name} {message.from_user.last_name or ''}".strip()
-            await session.commit()
-    
+    """Обработчик команды /start (пользователя регистрирует FirstContactMiddleware)"""
+    await discard_form(state)
+
     welcome_text = (
         "👋 Добро пожаловать в <b>RoadDoc</b>!\n\n"
         "Я помогу вам:\n"
@@ -56,15 +41,15 @@ async def cmd_start(message: Message, state: FSMContext):
 @router.message(Command("menu"))
 async def cmd_menu(message: Message, state: FSMContext):
     """Возврат в главное меню"""
-    await state.clear()
+    await discard_form(state)
     await message.answer("Вы в главном меню:", reply_markup=main_menu)
 
 @router.message(F.text == "❌ Отмена")
 async def cmd_cancel(message: Message, state: FSMContext):
-    """Отмена текущей операции"""
+    """Отмена текущей операции (единственный обработчик «❌ Отмена»: роутер start подключён первым)"""
     current_state = await state.get_state()
     if current_state:
-        await state.clear()
+        await discard_form(state)
         await message.answer("❌ Операция отменена", reply_markup=main_menu)
         logger.info(f"Пользователь {message.from_user.id} отменил операцию {current_state}")
     else:
@@ -82,7 +67,7 @@ async def cmd_help(message: Message):
         "3. Отправьте фото проблемы\n"
         "4. Укажите местоположение (геолокация или адрес)\n"
         "5. Опишите проблему подробно\n"
-        "6. Подтвердите отправку заявления\n\n"
+        "6. Получите готовое заявление в PDF и направьте его в дорожную службу\n\n"
         "<b>Как оформить ДТП:</b>\n"
         "1. Нажмите «🚗 Оформить ДТП»\n"
         "2. Укажите количество участников\n"
@@ -105,6 +90,7 @@ async def cmd_help(message: Message):
 async def cmd_report(message: Message, state: FSMContext):
     """Начало оформления жалобы на проблему"""
     from .reports import start_report
+    await discard_form(state)  # иначе данные брошенной формы попадут в новую
     await start_report(message, state)
 
 @router.message(Command("accident"))
@@ -112,6 +98,7 @@ async def cmd_report(message: Message, state: FSMContext):
 async def cmd_accident(message: Message, state: FSMContext):
     """Начало оформления ДТП"""
     from .accidents import start_accident
+    await discard_form(state)  # иначе данные брошенной формы попадут в новую
     await start_accident(message, state)
 
 @router.message(Command("stats"))

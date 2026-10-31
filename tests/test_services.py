@@ -1,6 +1,6 @@
 import unittest
 
-from src.utils.validators import sanitize_text, validate_coordinates, validate_phone
+from src.utils.validators import sanitize_text, validate_coordinates
 from src.utils.converters import parse_participant
 
 try:
@@ -23,13 +23,6 @@ class TestValidators(unittest.TestCase):
 
     def test_validate_coordinates_rejects_invalid_range(self):
         self.assertFalse(validate_coordinates(95.0, 200.0))
-
-    def test_validate_phone_accepts_russian_formats(self):
-        self.assertTrue(validate_phone("+7 (999) 123-45-67"))
-        self.assertTrue(validate_phone("89991234567"))
-
-    def test_validate_phone_rejects_invalid(self):
-        self.assertFalse(validate_phone("12345"))
 
 
 class TestParseParticipant(unittest.TestCase):

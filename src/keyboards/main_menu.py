@@ -18,7 +18,7 @@ def get_cancel_keyboard() -> ReplyKeyboardMarkup:
 def get_confirm_keyboard() -> ReplyKeyboardMarkup:
     """Клавиатура подтверждения отправки"""
     keyboard = [
-        [KeyboardButton(text="✅ Отправить заявление")],
+        [KeyboardButton(text="✅ Сформировать заявление")],
         [KeyboardButton(text="❌ Отмена")]
     ]
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True, one_time_keyboard=True)

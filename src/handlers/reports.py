@@ -5,10 +5,11 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 from pathlib import Path
 from html import escape
+import asyncio
 import uuid
 from src.database import Report, User, get_db
 from src.states.report_states import ReportStates
-from src.keyboards.report_types import get_problem_type_keyboard, get_location_request_keyboard
+from src.keyboards.report_types import PROBLEM_TYPES, get_problem_type_keyboard, get_location_request_keyboard
 from src.keyboards.main_menu import main_menu, cancel_menu
 from src.services.document_generator import generate_problem_statement
 from src.utils.validators import sanitize_text, validate_coordinates
@@ -27,11 +28,6 @@ async def start_report(message: Message, state: FSMContext):
     await state.set_state(ReportStates.waiting_for_problem_type)
     logger.info(f"User {message.from_user.id} started report creation")
 
-@router.message(ReportStates.waiting_for_problem_type, F.text == "❌ Отмена")
-async def cancel_report(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer("❌ Отменено", reply_markup=main_menu)
-
 @router.message(
     StateFilter(ReportStates.waiting_for_location_text, ReportStates.waiting_for_description),
     ~F.text
@@ -42,25 +38,15 @@ async def require_text(message: Message):
 @router.message(ReportStates.waiting_for_problem_type)
 async def process_problem_type(message: Message, state: FSMContext):
     """Обработка выбора типа проблемы"""
-    valid_types = [
-        "🕳️ Яма / выбоина",
-        "🚦 Неисправный светофор", 
-        "🛣️ Проблемы с разметкой",
-        "🛑 Повреждённый знак",
-        "🌲 Помеха на дороге (ветка, мусор)",
-        "⚠️ Другое"
-    ]
-    
-    if message.text not in valid_types:
+    if message.text not in PROBLEM_TYPES:
         await message.answer(
             "Пожалуйста, выберите тип проблемы из списка ниже:",
             reply_markup=get_problem_type_keyboard()
         )
         return
     
-    # Сохраняем очищенный тип проблемы
-    problem_type = message.text.replace("🕳️ ", "").replace("🚦 ", "").replace("🛣️ ", "") \
-                               .replace("🛑 ", "").replace("🌲 ", "").replace("⚠️ ", "").strip()
+    # Сохраняем тип без эмодзи
+    problem_type = message.text.split(" ", 1)[1]
     
     await state.update_data(problem_type=problem_type)
     await message.answer(
@@ -144,15 +130,6 @@ async def process_location_text(message: Message, state: FSMContext):
     )
     await state.set_state(ReportStates.waiting_for_description)
 
-@router.message(ReportStates.waiting_for_location_method, F.text == "❌ Отмена")
-@router.message(ReportStates.waiting_for_location_text, F.text == "❌ Отмена")
-@router.message(ReportStates.waiting_for_description, F.text == "❌ Отмена")
-async def cancel_operation(message: Message, state: FSMContext):
-    current_state = await state.get_state()
-    await state.clear()
-    await message.answer("❌ Операция отменена", reply_markup=main_menu)
-    logger.info(f"User {message.from_user.id} cancelled operation at state {current_state}")
-
 @router.message(ReportStates.waiting_for_description)
 async def process_description(message: Message, state: FSMContext):
     """Обработка описания проблемы"""
@@ -176,7 +153,7 @@ async def process_description(message: Message, state: FSMContext):
     if data.get('description'):
         confirmation_text += f"<b>Описание:</b> {escape(data['description'])}\n"
     
-    confirmation_text += "\n✅ Отправить заявление в дорожную службу?"
+    confirmation_text += "\n✅ Сформировать заявление?"
     
     await message.answer(
         confirmation_text,
@@ -187,12 +164,16 @@ async def process_description(message: Message, state: FSMContext):
 
 @router.message(
     ReportStates.confirming_report,
-    F.text.in_(["✅ Отправить заявление", "✅ Отправить", "Да", "да"])
+    F.text.in_(["✅ Сформировать заявление", "Да", "да"])
 )
 async def confirm_report(message: Message, state: FSMContext):
     """Подтверждение и сохранение заявления"""
     data = await state.get_data()
-    
+    # Сбрасываем сразу. Повторное нажатие, прошедшее фильтр состояния до сброса, увидит пустые данные и выйдет
+    await state.clear()
+    if not data:
+        return
+
     # Сохраняем в БД
     async with get_db() as session:
         result = await session.execute(
@@ -219,7 +200,6 @@ async def confirm_report(message: Message, state: FSMContext):
             'id': report.id,
             'user_full_name': user.full_name,
             'username': user.username or str(user.telegram_id),
-            'phone': user.phone,
             'problem_type': report.problem_type,
             'description': report.description,
             'latitude': report.latitude,
@@ -229,7 +209,8 @@ async def confirm_report(message: Message, state: FSMContext):
             'created_at': report.created_at
         }
         
-        document_path = generate_problem_statement(report_data)
+        # В отдельном потоке: сборка PDF занимает сотни мс и иначе стопорит ответы всем пользователям
+        document_path = await asyncio.to_thread(generate_problem_statement, report_data)
         report.document_path = document_path
         await session.commit()
     
@@ -239,22 +220,20 @@ async def confirm_report(message: Message, state: FSMContext):
     await message.bot.send_document(
         chat_id=message.chat.id,
         document=FSInputFile(document_path),
-        caption="✅ Ваше заявление успешно отправлено!...",
-        parse_mode="HTML"
+        caption=f"✅ Заявление RD-{report.id} сформировано"
     )
-    
+
     await message.answer(
-        "Спасибо за ваше обращение! 🙏\n"
-        "Ваша активная гражданская позиция помогает сделать дороги безопаснее.",
+        "Бот не отправляет заявление сам. Направьте этот документ в дорожную службу "
+        "или администрацию вашего района — например, через Госуслуги или по электронной почте.",
         reply_markup=main_menu
     )
     
     logger.info(f"Report #{report.id} created by user {message.from_user.id}")
-    await state.clear()
 
 @router.message(ReportStates.confirming_report)
 async def handle_confirmation(message: Message):
     await message.answer(
-        "Пожалуйста, подтвердите отправку заявления кнопкой '✅ Отправить' или отмените операцию кнопкой '❌ Отмена'",
+        "Пожалуйста, подтвердите кнопкой '✅ Сформировать заявление' или отмените операцию кнопкой '❌ Отмена'",
         reply_markup=get_confirm_keyboard()
     )

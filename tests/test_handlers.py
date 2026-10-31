@@ -15,7 +15,7 @@ class TestKeyboardsAndStates(unittest.TestCase):
     def test_report_confirm_keyboard_contains_submit_button(self):
         keyboard = get_confirm_keyboard()
         first_button_text = keyboard.keyboard[0][0].text
-        self.assertEqual(first_button_text, "✅ Отправить заявление")
+        self.assertEqual(first_button_text, "✅ Сформировать заявление")
 
     def test_accident_confirm_keyboard_contains_yes_button(self):
         keyboard = get_accident_confirm_keyboard()

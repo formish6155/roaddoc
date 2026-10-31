@@ -1,11 +1,6 @@
 # src/main.py
 import asyncio
 import sys
-from pathlib import Path
-
-# Настройка путей
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
 
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage

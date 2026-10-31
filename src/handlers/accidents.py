@@ -5,6 +5,7 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 from html import escape
 import json
+import asyncio
 import uuid
 from pathlib import Path
 from src.database import AccidentReport, User, get_db
@@ -27,11 +28,6 @@ async def start_accident(message: Message, state: FSMContext):
         parse_mode="HTML"
     )
     await state.set_state(AccidentStates.waiting_for_participants_count)
-
-@router.message(AccidentStates.waiting_for_participants_count, F.text == "❌ Отмена")
-async def cancel_accident(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer("❌ Оформление ДТП отменено", reply_markup=main_menu)
 
 @router.message(
     StateFilter(
@@ -210,12 +206,16 @@ async def process_accident_description(message: Message, state: FSMContext):
 
 @router.message(
     AccidentStates.confirming_accident,
-    F.text.in_({"✅ Отправить", "✅ Да", "Да", "да", "✅ Отправить заявление"})
+    F.text.in_({"✅ Да", "Да", "да"})
 )
 async def confirm_accident(message: Message, state: FSMContext):
     """Подтверждение и генерация европротокола"""
     data = await state.get_data()
-    
+    # Сбрасываем сразу. Повторное нажатие, прошедшее фильтр состояния до сброса, увидит пустые данные и выйдет
+    await state.clear()
+    if not data:
+        return
+
     # Сохраняем в БД
     async with get_db() as session:
         result = await session.execute(
@@ -247,7 +247,8 @@ async def confirm_accident(message: Message, state: FSMContext):
             'created_at': accident.created_at
         }
         
-        document_path = generate_accident_protocol(accident_data)
+        # В отдельном потоке: сборка PDF занимает сотни мс и иначе стопорит ответы всем пользователям
+        document_path = await asyncio.to_thread(generate_accident_protocol, accident_data)
         accident.document_path = document_path
         await session.commit()
     
@@ -256,8 +257,7 @@ async def confirm_accident(message: Message, state: FSMContext):
     await message.bot.send_document(
         chat_id=message.chat.id,
         document=FSInputFile(document_path),
-        caption="✅ Ваше заявление успешно отправлено!...",
-        parse_mode="HTML"
+        caption=f"✅ Извещение о ДТП ACC-{accident.id} сформировано. Распечатайте и подпишите его всеми участниками."
     )
     
     await message.answer(
@@ -270,7 +270,6 @@ async def confirm_accident(message: Message, state: FSMContext):
     )
     
     logger.info(f"Accident report #{accident.id} created by user {message.from_user.id}")
-    await state.clear()
 
 @router.message(AccidentStates.confirming_accident)
 async def handle_accident_confirmation(message: Message):
