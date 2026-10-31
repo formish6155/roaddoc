@@ -31,6 +31,16 @@ class TestValidators(unittest.TestCase):
         self.assertFalse(validate_phone("12345"))
 
 
+class TestSettings(unittest.TestCase):
+    def test_admin_ids_env_formats(self):
+        from unittest.mock import patch
+        from src.config import Settings
+        cases = {"111": [111], "111,222": [111, 222], "[111,222]": [111, 222], "": []}
+        for raw, expected in cases.items():
+            with patch.dict("os.environ", {"ADMIN_IDS": raw}):
+                self.assertEqual(Settings(_env_file=None).ADMIN_IDS, expected, raw)
+
+
 @unittest.skipUnless(REPORTLAB_AVAILABLE, "reportlab is not installed in this environment")
 class TestDocumentGenerator(unittest.TestCase):
     def test_as_list_keeps_list_from_handler(self):
