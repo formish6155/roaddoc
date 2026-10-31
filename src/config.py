@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Union
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
@@ -6,7 +6,8 @@ from pathlib import Path
 class Settings(BaseSettings):
     # Telegram
     BOT_TOKEN: str = ""
-    ADMIN_IDS: List[int] = Field(default_factory=list)
+    # str в Union не даёт pydantic-settings упасть на не-JSON значении вроде "1,2" — его разбирает валидатор
+    ADMIN_IDS: Union[List[int], str] = Field(default_factory=list)
     
     # Database
     DATABASE_URL: str = "sqlite+aiosqlite:///./data/database.db"
@@ -28,6 +29,8 @@ class Settings(BaseSettings):
     @field_validator("ADMIN_IDS", mode="before")
     @classmethod
     def parse_admin_ids(cls, value):
+        if isinstance(value, int):  # один ID: "123" декодируется как JSON-число
+            return [value]
         if isinstance(value, str):
             raw_items = [item.strip() for item in value.split(",") if item.strip()]
             return [int(item) for item in raw_items]

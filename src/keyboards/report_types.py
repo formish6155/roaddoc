@@ -1,16 +1,18 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
+# Эмодзи и название через один пробел: обработчик сохраняет в БД часть после пробела
+PROBLEM_TYPES = [
+    "🕳️ Яма / выбоина",
+    "🚦 Неисправный светофор",
+    "🛣️ Проблемы с разметкой",
+    "🛑 Повреждённый знак",
+    "🌲 Помеха на дороге (ветка, мусор)",
+    "⚠️ Другое",
+]
+
 def get_problem_type_keyboard() -> ReplyKeyboardMarkup:
     """Клавиатура выбора типа проблемы"""
-    keyboard = [
-        [KeyboardButton(text="🕳️ Яма / выбоина")],
-        [KeyboardButton(text="🚦 Неисправный светофор")],
-        [KeyboardButton(text="🛣️ Проблемы с разметкой")],
-        [KeyboardButton(text="🛑 Повреждённый знак")],
-        [KeyboardButton(text="🌲 Помеха на дороге (ветка, мусор)")],
-        [KeyboardButton(text="⚠️ Другое")],
-        [KeyboardButton(text="❌ Отмена")]
-    ]
+    keyboard = [[KeyboardButton(text=t)] for t in PROBLEM_TYPES] + [[KeyboardButton(text="❌ Отмена")]]
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True, one_time_keyboard=True)
 
 def get_location_request_keyboard() -> ReplyKeyboardMarkup:

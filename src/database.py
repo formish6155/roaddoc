@@ -20,6 +20,8 @@ def _ensure_sqlite_columns(sync_conn):
         report_columns = {column["name"] for column in inspector.get_columns("reports")}
         if "document_path" not in report_columns:
             sync_conn.execute(text("ALTER TABLE reports ADD COLUMN document_path VARCHAR(500)"))
+        if "address" not in report_columns:
+            sync_conn.execute(text("ALTER TABLE reports ADD COLUMN address VARCHAR(200)"))
 
     if "accident_reports" in table_names:
         accident_columns = {column["name"] for column in inspector.get_columns("accident_reports")}
@@ -49,6 +51,7 @@ class Report(Base):
     description = Column(Text, nullable=True)
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
+    address = Column(String(200), nullable=True)
     photo_path = Column(String(500), nullable=True)
     document_path = Column(String(500), nullable=True)
     status = Column(String(50), default="new")  # new, in_progress, resolved, rejected

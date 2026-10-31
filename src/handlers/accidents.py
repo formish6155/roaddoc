@@ -1,8 +1,11 @@
 from aiogram import Router, F
 from aiogram.types import Message, PhotoSize, FSInputFile
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
+from html import escape
 import json
+import asyncio
 import uuid
 from pathlib import Path
 from src.database import AccidentReport, User, get_db
@@ -10,6 +13,7 @@ from src.states.accident_states import AccidentStates
 from src.keyboards.main_menu import main_menu, cancel_menu, get_accident_confirm_keyboard
 from src.services.document_generator import generate_accident_protocol
 from src.utils.validators import sanitize_text
+from src.utils.converters import parse_participant
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -25,10 +29,16 @@ async def start_accident(message: Message, state: FSMContext):
     )
     await state.set_state(AccidentStates.waiting_for_participants_count)
 
-@router.message(AccidentStates.waiting_for_participants_count, F.text == "❌ Отмена")
-async def cancel_accident(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer("❌ Оформление ДТП отменено", reply_markup=main_menu)
+@router.message(
+    StateFilter(
+        AccidentStates.waiting_for_participants_count,
+        AccidentStates.waiting_for_participant_data,
+        AccidentStates.waiting_for_description,
+    ),
+    ~F.text
+)
+async def require_text(message: Message):
+    await message.answer("✏️ Пожалуйста, отправьте ответ текстом.", reply_markup=cancel_menu)
 
 @router.message(AccidentStates.waiting_for_participants_count)
 async def process_participants_count(message: Message, state: FSMContext):
@@ -53,7 +63,7 @@ async def process_participants_count(message: Message, state: FSMContext):
     
     await message.answer(
         f"👤 Введите данные <b>участника №1</b> (вас):\n"
-        "Формат: ФИО, телефон, гос.номер, страховая компания",
+        "Формат: ФИО, телефон, гос.номер, страховая компания (через запятую или каждое с новой строки)",
         reply_markup=cancel_menu,
         parse_mode="HTML"
     )
@@ -67,15 +77,8 @@ async def process_participant_data(message: Message, state: FSMContext):
     current = data.get('current_participant', 1)
     total = data.get('participants_count', 2)
     
-    # Парсим данные участника (упрощённо)
-    parts = [p.strip() for p in message.text.split(',')]
-    participant = {
-        'name': parts[0] if len(parts) > 0 else 'Не указано',
-        'phone': parts[1] if len(parts) > 1 else 'Не указано',
-        'license_plate': parts[2] if len(parts) > 2 else 'Не указано',
-        'insurance': parts[3] if len(parts) > 3 else 'Не указано'
-    }
-    
+    participant = parse_participant(message.text)
+
     participants.append(participant)
     await state.update_data(participants=participants)
     
@@ -84,7 +87,7 @@ async def process_participant_data(message: Message, state: FSMContext):
         await state.update_data(current_participant=next_num)
         await message.answer(
             f"👤 Введите данные <b>участника №{next_num}</b>:\n"
-            "Формат: ФИО, телефон, гос.номер, страховая компания",
+            "Формат: ФИО, телефон, гос.номер, страховая компания (через запятую или каждое с новой строки)",
             reply_markup=cancel_menu,
             parse_mode="HTML"
         )
@@ -191,7 +194,7 @@ async def process_accident_description(message: Message, state: FSMContext):
     if data.get('latitude') and data.get('longitude'):
         confirmation += f"<b>Координаты:</b> {data['latitude']:.6f}, {data['longitude']:.6f}\n"
     
-    confirmation += f"<b>Обстоятельства:</b> {description[:100]}...\n\n"
+    confirmation += f"<b>Обстоятельства:</b> {escape(description[:100])}...\n\n"
     confirmation += "✅ Подтвердить и сгенерировать европротокол?"
     
     await message.answer(
@@ -203,12 +206,16 @@ async def process_accident_description(message: Message, state: FSMContext):
 
 @router.message(
     AccidentStates.confirming_accident,
-    F.text.in_({"✅ Отправить", "✅ Да", "Да", "да", "✅ Отправить заявление"})
+    F.text.in_({"✅ Да", "Да", "да"})
 )
 async def confirm_accident(message: Message, state: FSMContext):
     """Подтверждение и генерация европротокола"""
     data = await state.get_data()
-    
+    # Сбрасываем сразу. Повторное нажатие, прошедшее фильтр состояния до сброса, увидит пустые данные и выйдет
+    await state.clear()
+    if not data:
+        return
+
     # Сохраняем в БД
     async with get_db() as session:
         result = await session.execute(
@@ -240,7 +247,8 @@ async def confirm_accident(message: Message, state: FSMContext):
             'created_at': accident.created_at
         }
         
-        document_path = generate_accident_protocol(accident_data)
+        # В отдельном потоке: сборка PDF занимает сотни мс и иначе стопорит ответы всем пользователям
+        document_path = await asyncio.to_thread(generate_accident_protocol, accident_data)
         accident.document_path = document_path
         await session.commit()
     
@@ -249,8 +257,7 @@ async def confirm_accident(message: Message, state: FSMContext):
     await message.bot.send_document(
         chat_id=message.chat.id,
         document=FSInputFile(document_path),
-        caption="✅ Ваше заявление успешно отправлено!...",
-        parse_mode="HTML"
+        caption=f"✅ Извещение о ДТП ACC-{accident.id} сформировано. Распечатайте и подпишите его всеми участниками."
     )
     
     await message.answer(
@@ -263,7 +270,6 @@ async def confirm_accident(message: Message, state: FSMContext):
     )
     
     logger.info(f"Accident report #{accident.id} created by user {message.from_user.id}")
-    await state.clear()
 
 @router.message(AccidentStates.confirming_accident)
 async def handle_accident_confirmation(message: Message):
