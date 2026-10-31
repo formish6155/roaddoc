@@ -2,6 +2,12 @@ import unittest
 
 from src.utils.validators import sanitize_text, validate_coordinates, validate_phone
 
+try:
+    from src.services.document_generator import _as_list
+    REPORTLAB_AVAILABLE = True
+except ModuleNotFoundError:
+    REPORTLAB_AVAILABLE = False
+
 
 class TestValidators(unittest.TestCase):
     def test_sanitize_text_removes_angle_brackets(self):
@@ -23,6 +29,20 @@ class TestValidators(unittest.TestCase):
 
     def test_validate_phone_rejects_invalid(self):
         self.assertFalse(validate_phone("12345"))
+
+
+@unittest.skipUnless(REPORTLAB_AVAILABLE, "reportlab is not installed in this environment")
+class TestDocumentGenerator(unittest.TestCase):
+    def test_as_list_keeps_list_from_handler(self):
+        participants = [{"name": "Иванов"}]
+        self.assertEqual(_as_list(participants), participants)
+
+    def test_as_list_parses_json_from_db(self):
+        self.assertEqual(_as_list('["a.jpg", "b.jpg"]'), ["a.jpg", "b.jpg"])
+
+    def test_as_list_handles_missing_and_broken(self):
+        self.assertEqual(_as_list(None), [])
+        self.assertEqual(_as_list("not json"), [])
 
 
 if __name__ == "__main__":

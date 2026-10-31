@@ -34,6 +34,15 @@ for font_path in MACOS_FONTS:
         except Exception as e:
             continue
 
+def _as_list(value) -> list:
+    """Список из готового list или из JSON-строки (как хранится в БД)"""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return []
+    return value if isinstance(value, list) else []
+
 def generate_problem_statement(report_data: dict) -> str:
     """
     Генерация заявления о проблеме на дороге в PDF
@@ -294,12 +303,7 @@ def generate_accident_protocol(accident_data: dict) -> str:
     # Участники ДТП
     elements.append(Paragraph("Участники ДТП:", section_header_style))
     
-    try:
-        participants = json.loads(accident_data.get('participants', '[]'))
-        if not isinstance(participants, list):
-            participants = []
-    except:
-        participants = []
+    participants = _as_list(accident_data.get('participants'))
     
     if not participants:
         elements.append(Paragraph("Данные участников не указаны", normal_style))
@@ -323,11 +327,7 @@ def generate_accident_protocol(accident_data: dict) -> str:
     elements.append(Spacer(1, 12))
     
     # Количество фотографий
-    try:
-        photo_paths = json.loads(accident_data.get('photo_paths', '[]'))
-        photo_count = len(photo_paths) if isinstance(photo_paths, list) else 0
-    except:
-        photo_count = 0
+    photo_count = len(_as_list(accident_data.get('photo_paths')))
     
     elements.append(Paragraph(f"Приложено фотографий: {photo_count}", normal_style))
     elements.append(Spacer(1, 15))

@@ -1,7 +1,9 @@
 from aiogram import Router, F
 from aiogram.types import Message, PhotoSize, FSInputFile
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
+from html import escape
 import json
 import uuid
 from pathlib import Path
@@ -29,6 +31,17 @@ async def start_accident(message: Message, state: FSMContext):
 async def cancel_accident(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("❌ Оформление ДТП отменено", reply_markup=main_menu)
+
+@router.message(
+    StateFilter(
+        AccidentStates.waiting_for_participants_count,
+        AccidentStates.waiting_for_participant_data,
+        AccidentStates.waiting_for_description,
+    ),
+    ~F.text
+)
+async def require_text(message: Message):
+    await message.answer("✏️ Пожалуйста, отправьте ответ текстом.", reply_markup=cancel_menu)
 
 @router.message(AccidentStates.waiting_for_participants_count)
 async def process_participants_count(message: Message, state: FSMContext):
@@ -191,7 +204,7 @@ async def process_accident_description(message: Message, state: FSMContext):
     if data.get('latitude') and data.get('longitude'):
         confirmation += f"<b>Координаты:</b> {data['latitude']:.6f}, {data['longitude']:.6f}\n"
     
-    confirmation += f"<b>Обстоятельства:</b> {description[:100]}...\n\n"
+    confirmation += f"<b>Обстоятельства:</b> {escape(description[:100])}...\n\n"
     confirmation += "✅ Подтвердить и сгенерировать европротокол?"
     
     await message.answer(

@@ -31,10 +31,10 @@ class TestKeyboardsAndStates(unittest.TestCase):
         self.assertTrue(keyboard.keyboard[0][0].request_location)
 
     def test_report_states_have_expected_step(self):
-        self.assertEqual(str(ReportStates.confirming_report), "ReportStates:confirming_report")
+        self.assertEqual(ReportStates.confirming_report.state, "ReportStates:confirming_report")
 
     def test_accident_states_have_expected_step(self):
-        self.assertEqual(str(AccidentStates.confirming_accident), "AccidentStates:confirming_accident")
+        self.assertEqual(AccidentStates.confirming_accident.state, "AccidentStates:confirming_accident")
 
 
 if __name__ == "__main__":

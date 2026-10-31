@@ -1,8 +1,10 @@
 from aiogram import Router, F
 from aiogram.types import Message, PhotoSize, FSInputFile
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 from pathlib import Path
+from html import escape
 import uuid
 from src.database import Report, User, get_db
 from src.states.report_states import ReportStates
@@ -29,6 +31,13 @@ async def start_report(message: Message, state: FSMContext):
 async def cancel_report(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("❌ Отменено", reply_markup=main_menu)
+
+@router.message(
+    StateFilter(ReportStates.waiting_for_location_text, ReportStates.waiting_for_description),
+    ~F.text
+)
+async def require_text(message: Message):
+    await message.answer("✏️ Пожалуйста, отправьте ответ текстом.", reply_markup=cancel_menu)
 
 @router.message(ReportStates.waiting_for_problem_type)
 async def process_problem_type(message: Message, state: FSMContext):
@@ -162,10 +171,10 @@ async def process_description(message: Message, state: FSMContext):
     if data.get('latitude') and data.get('longitude'):
         confirmation_text += f"<b>Координаты:</b> {data['latitude']:.6f}, {data['longitude']:.6f}\n"
     elif data.get('address'):
-        confirmation_text += f"<b>Адрес:</b> {data['address']}\n"
-    
+        confirmation_text += f"<b>Адрес:</b> {escape(data['address'])}\n"
+
     if data.get('description'):
-        confirmation_text += f"<b>Описание:</b> {data['description']}\n"
+        confirmation_text += f"<b>Описание:</b> {escape(data['description'])}\n"
     
     confirmation_text += "\n✅ Отправить заявление в дорожную службу?"
     
@@ -197,6 +206,7 @@ async def confirm_report(message: Message, state: FSMContext):
             description=data.get('description'),
             latitude=data.get('latitude'),
             longitude=data.get('longitude'),
+            address=data.get('address'),
             photo_path=data.get('photo_path'),
             status="new"
         )
@@ -214,7 +224,7 @@ async def confirm_report(message: Message, state: FSMContext):
             'description': report.description,
             'latitude': report.latitude,
             'longitude': report.longitude,
-            'address': data.get('address'),
+            'address': report.address,
             'photo_path': report.photo_path,
             'created_at': report.created_at
         }
