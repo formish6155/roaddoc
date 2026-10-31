@@ -1,6 +1,7 @@
 import unittest
 
 from src.utils.validators import sanitize_text, validate_coordinates, validate_phone
+from src.utils.converters import parse_participant
 
 try:
     from src.services.document_generator import _as_list
@@ -29,6 +30,21 @@ class TestValidators(unittest.TestCase):
 
     def test_validate_phone_rejects_invalid(self):
         self.assertFalse(validate_phone("12345"))
+
+
+class TestParseParticipant(unittest.TestCase):
+    expected = {"name": "Иванов Иван", "phone": "+79990000000", "license_plate": "А123АА777", "insurance": "СОГАЗ"}
+
+    def test_comma_separated(self):
+        self.assertEqual(parse_participant("Иванов Иван, +79990000000, А123АА777, СОГАЗ"), self.expected)
+
+    def test_one_field_per_line(self):
+        self.assertEqual(parse_participant("Иванов Иван \n+79990000000\n\nА123АА777\nСОГАЗ"), self.expected)
+
+    def test_missing_fields(self):
+        result = parse_participant("Иванов Иван")
+        self.assertEqual(result["name"], "Иванов Иван")
+        self.assertEqual(result["insurance"], "Не указано")
 
 
 class TestSettings(unittest.TestCase):

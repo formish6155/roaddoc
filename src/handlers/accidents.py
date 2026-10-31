@@ -12,6 +12,7 @@ from src.states.accident_states import AccidentStates
 from src.keyboards.main_menu import main_menu, cancel_menu, get_accident_confirm_keyboard
 from src.services.document_generator import generate_accident_protocol
 from src.utils.validators import sanitize_text
+from src.utils.converters import parse_participant
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -66,7 +67,7 @@ async def process_participants_count(message: Message, state: FSMContext):
     
     await message.answer(
         f"👤 Введите данные <b>участника №1</b> (вас):\n"
-        "Формат: ФИО, телефон, гос.номер, страховая компания",
+        "Формат: ФИО, телефон, гос.номер, страховая компания (через запятую или каждое с новой строки)",
         reply_markup=cancel_menu,
         parse_mode="HTML"
     )
@@ -80,15 +81,8 @@ async def process_participant_data(message: Message, state: FSMContext):
     current = data.get('current_participant', 1)
     total = data.get('participants_count', 2)
     
-    # Парсим данные участника (упрощённо)
-    parts = [p.strip() for p in message.text.split(',')]
-    participant = {
-        'name': parts[0] if len(parts) > 0 else 'Не указано',
-        'phone': parts[1] if len(parts) > 1 else 'Не указано',
-        'license_plate': parts[2] if len(parts) > 2 else 'Не указано',
-        'insurance': parts[3] if len(parts) > 3 else 'Не указано'
-    }
-    
+    participant = parse_participant(message.text)
+
     participants.append(participant)
     await state.update_data(participants=participants)
     
@@ -97,7 +91,7 @@ async def process_participant_data(message: Message, state: FSMContext):
         await state.update_data(current_participant=next_num)
         await message.answer(
             f"👤 Введите данные <b>участника №{next_num}</b>:\n"
-            "Формат: ФИО, телефон, гос.номер, страховая компания",
+            "Формат: ФИО, телефон, гос.номер, страховая компания (через запятую или каждое с новой строки)",
             reply_markup=cancel_menu,
             parse_mode="HTML"
         )
