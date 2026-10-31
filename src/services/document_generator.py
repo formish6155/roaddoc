@@ -8,6 +8,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from pathlib import Path
 from datetime import datetime, timezone
 import json
+from xml.sax.saxutils import escape
 from src.config import settings
 
 # Шрифт с кириллицей лежит в репозитории, чтобы PDF читался на любой ОС, а не только на macOS
@@ -16,6 +17,10 @@ pdfmetrics.registerFont(TTFont('DejaVuSans', FONTS_DIR / "DejaVuSans.ttf"))
 pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', FONTS_DIR / "DejaVuSans-Bold.ttf"))
 DEFAULT_FONT = 'DejaVuSans'
 BOLD_FONT = 'DejaVuSans-Bold'
+
+def _t(value) -> str:
+    """Текст пользователя для Paragraph: reportlab читает < > & как разметку, и «<b>» без закрытия роняет сборку"""
+    return escape(str(value))
 
 def _created_at(data: dict) -> datetime:
     """Время создания из БД в местном времени (SQLite хранит UTC без часового пояса)"""
@@ -125,8 +130,8 @@ def generate_problem_statement(report_data: dict) -> str:
     
     # Данные заявителя
     elements.append(Paragraph("Данные заявителя:", section_header_style))
-    elements.append(Paragraph(f"ФИО: {report_data.get('user_full_name', 'Не указано')}", normal_style))
-    elements.append(Paragraph(f"Telegram: @{report_data.get('username', report_data.get('telegram_id', 'N/A'))}", normal_style))
+    elements.append(Paragraph(f"ФИО: {_t(report_data.get('user_full_name', 'Не указано'))}", normal_style))
+    elements.append(Paragraph(f"Telegram: @{_t(report_data.get('username', report_data.get('telegram_id', 'N/A')))}", normal_style))
     elements.append(Spacer(1, 12))
     
     # Информация о проблеме
@@ -139,11 +144,11 @@ def generate_problem_statement(report_data: dict) -> str:
             normal_style
         ))
     elif report_data.get('address'):
-        elements.append(Paragraph(f"Адрес: {report_data['address']}", normal_style))
+        elements.append(Paragraph(f"Адрес: {_t(report_data['address'])}", normal_style))
     
     if report_data.get('description'):
         elements.append(Paragraph("Описание проблемы:", section_header_style))
-        elements.append(Paragraph(report_data['description'], normal_style))
+        elements.append(Paragraph(_t(report_data['description']), normal_style))
     
     elements.append(Spacer(1, 15))
     
@@ -294,10 +299,10 @@ def generate_accident_protocol(accident_data: dict) -> str:
     else:
         for i, participant in enumerate(participants, 1):
             elements.append(Paragraph(f"Участник №{i}:", section_header_style))
-            elements.append(Paragraph(f"ФИО: {participant.get('name', 'Не указано')}", normal_style))
-            elements.append(Paragraph(f"Телефон: {participant.get('phone', 'Не указано')}", normal_style))
-            elements.append(Paragraph(f"Гос. номер: {participant.get('license_plate', 'Не указано')}", normal_style))
-            elements.append(Paragraph(f"Страховая: {participant.get('insurance', 'Не указано')}", normal_style))
+            elements.append(Paragraph(f"ФИО: {_t(participant.get('name', 'Не указано'))}", normal_style))
+            elements.append(Paragraph(f"Телефон: {_t(participant.get('phone', 'Не указано'))}", normal_style))
+            elements.append(Paragraph(f"Гос. номер: {_t(participant.get('license_plate', 'Не указано'))}", normal_style))
+            elements.append(Paragraph(f"Страховая: {_t(participant.get('insurance', 'Не указано'))}", normal_style))
             elements.append(Spacer(1, 8))
     
     elements.append(Spacer(1, 12))
@@ -305,7 +310,7 @@ def generate_accident_protocol(accident_data: dict) -> str:
     # Обстоятельства ДТП
     elements.append(Paragraph("Обстоятельства ДТП:", section_header_style))
     description = accident_data.get('description', 'Не указано')
-    elements.append(Paragraph(description, normal_style))
+    elements.append(Paragraph(_t(description), normal_style))
     elements.append(Spacer(1, 12))
     
     # Количество фотографий

@@ -34,6 +34,10 @@ class TestParseParticipant(unittest.TestCase):
     def test_one_field_per_line(self):
         self.assertEqual(parse_participant("Иванов Иван \n+79990000000\n\nА123АА777\nСОГАЗ"), self.expected)
 
+    def test_comma_inside_line_stays_in_field(self):
+        result = parse_participant("Иванов Иван\n+79990000000\nА123АА777\nСОГАЗ, полис ХХХ 0123456")
+        self.assertEqual(result["insurance"], "СОГАЗ, полис ХХХ 0123456")
+
     def test_missing_fields(self):
         result = parse_participant("Иванов Иван")
         self.assertEqual(result["name"], "Иванов Иван")
@@ -58,6 +62,17 @@ class TestDocumentGenerator(unittest.TestCase):
 
     def test_as_list_parses_json_from_db(self):
         self.assertEqual(_as_list('["a.jpg", "b.jpg"]'), ["a.jpg", "b.jpg"])
+
+    def test_markup_in_user_text_does_not_break_pdf(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from src.config import settings
+        from src.services.document_generator import generate_accident_protocol
+        with tempfile.TemporaryDirectory() as tmp, patch.object(settings, "DOCS_DIR", Path(tmp)):
+            participant = {"name": "ИП <b>Петров", "phone": "1 & 2", "license_plate": "<A>", "insurance": "x"}
+            path = generate_accident_protocol({"id": 1, "participants": [participant], "description": "<i>"})
+            self.assertTrue(path.endswith(".pdf"), path)
 
     def test_as_list_handles_missing_and_broken(self):
         self.assertEqual(_as_list(None), [])
