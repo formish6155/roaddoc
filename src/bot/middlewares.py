@@ -17,16 +17,23 @@ class FirstContactMiddleware(BaseMiddleware):
                     select(User).where(User.telegram_id == event.from_user.id)
                 )
                 user = result.scalar_one_or_none()
-                
+                username = event.from_user.username
+                full_name = f"{event.from_user.first_name} {event.from_user.last_name or ''}".strip()
+
                 if not user:
                     # Регистрируем пользователя и пропускаем сообщение дальше.
                     # Это сохраняет первый апдейт (например /start), а не "съедает" его.
                     new_user = User(
                         telegram_id=event.from_user.id,
-                        username=event.from_user.username,
-                        full_name=f"{event.from_user.first_name} {event.from_user.last_name or ''}".strip()
+                        username=username,
+                        full_name=full_name
                     )
                     session.add(new_user)
+                    await session.commit()
+                elif (user.username, user.full_name) != (username, full_name):
+                    # Админы создаются при старте с заглушками вместо имени; заменяем на реальные данные
+                    user.username = username
+                    user.full_name = full_name
                     await session.commit()
         
         return await handler(event, data)
